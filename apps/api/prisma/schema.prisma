@@ -82,3 +82,42 @@ model SavedRecipe {
   recipeData String
   createdAt  DateTime @default(now())
 }
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  type      String
+  userId    String?
+  severity  String   @default("info")
+  details   String   @default("{}")
+  ipHash    String?
+  requestId String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model ConsentRecord {
+  id            String   @id @default(cuid())
+  userId        String
+  consentType   String
+  granted       Boolean
+  policyVersion String   @default("1.0")
+  method        String   @default("toggle")
+  ipHash        String?
+  userAgent     String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId, consentType])
+}
+
+model AccountDeletionRequest {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  requestedAt   DateTime @default(now())
+  scheduledFor  DateTime
+  cancelledAt   DateTime?
+  completedAt   DateTime?
+  status        String   @default("pending")
+}
