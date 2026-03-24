@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "FridgeScan AI",
+    "slug": "fridgescan",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "fridgescan",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAFDF7"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.fridgescan.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "FridgeScan AI necesită acces la cameră pentru a scana conținutul frigiderului."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FAFDF7"
+      },
+      "package": "com.fridgescan.app",
+      "permissions": ["CAMERA"]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "FridgeScan AI necesită acces la cameră pentru a scana conținutul frigiderului."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#2D8B4E"
+        }
+      ],
+      "expo-image-picker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

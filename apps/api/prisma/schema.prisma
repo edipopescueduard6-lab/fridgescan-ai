@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../fridgescan.db"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile    UserProfile?
+  pantryItems PantryItem[]
+  scans      ScanHistory[]
+  savedRecipes SavedRecipe[]
+}
+
+model UserProfile {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  age               Int?
+  sex               String?
+  weight            Float?
+  height            Float?
+  activityLevel     String?
+  allergies         String   @default("[]")
+  medicalConditions String   @default("[]")
+  dietaryPrefs      String   @default("[]")
+  dailyCalorieGoal  Int?
+  pregnancyStatus   String   @default("none")
+  medications       String   @default("[]")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model PantryItem {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name             String
+  nameEn           String
+  category         String
+  quantity         Float
+  unit             String
+  purchaseDate     DateTime?
+  expiryDate       DateTime?
+  freshness        String   @default("ok")
+  location         String   @default("fridge")
+  usdaFoodId       String?
+  nutritionPer100g String?
+  isFinished       Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  scanId String?
+  scan   ScanHistory? @relation(fields: [scanId], references: [id])
+}
+
+model ScanHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  imageUrl  String
+  rawResult String
+  itemsFound Int
+  createdAt DateTime @default(now())
+
+  items PantryItem[]
+}
+
+model SavedRecipe {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipeData String
+  createdAt  DateTime @default(now())
+}
