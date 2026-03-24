@@ -6,7 +6,21 @@
 import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+// Nu instanțiem un PrismaClient propriu — îl primim din exterior pentru a evita
+// conexiuni duplicate și memory leaks. Folosim un singleton lazy.
+let _prisma: PrismaClient | null = null;
+
+function getPrisma(): PrismaClient {
+  if (!_prisma) {
+    _prisma = new PrismaClient();
+  }
+  return _prisma;
+}
+
+/** Injectează un PrismaClient existent (apelat din index.ts la startup) */
+export function setPrismaClient(prisma: PrismaClient): void {
+  _prisma = prisma;
+}
 
 /** Tipuri de evenimente de audit */
 export enum AuditEventType {
@@ -115,6 +129,7 @@ export function hashIP(ip: string): string {
 export async function logAuditEvent(event: AuditEventInput): Promise<void> {
   try {
     const sanitizedDetails = sanitizeDetails(event.details);
+    const prisma = getPrisma();
 
     await prisma.auditLog.create({
       data: {
@@ -148,6 +163,7 @@ export async function getAuditLogs(
   requestId: string | null;
 }>> {
   const { type, from, to, limit = 100 } = options;
+  const prisma = getPrisma();
 
   const where: Record<string, unknown> = { userId };
 

@@ -10,12 +10,16 @@ import pantryRoutes from './routes/pantry.routes';
 import scanRoutes from './routes/scan.routes';
 import recipeRoutes from './routes/recipe.routes';
 import gdprRoutes from './routes/gdpr.routes';
+import { setPrismaClient } from './services/audit.service';
 
 dotenv.config();
 
 const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3000;
+
+// Injectează prisma singleton în audit service (evită conexiuni duplicate)
+setPrismaClient(prisma);
 
 // ===== 1. HELMET — Security headers (FIRST) =====
 app.use(helmet({
@@ -117,11 +121,19 @@ app.use('/api/recipes', recipeRoutes);
 app.use('/api/gdpr', gdprRoutes);
 
 // Health check (public, no auth)
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', async (_req, res) => {
+  let ollamaStatus = { running: false, textModel: false, visionModel: false, models: [] as string[] };
+  try {
+    const { ollamaHealthCheck } = require('./services/ollama.service');
+    ollamaStatus = await ollamaHealthCheck();
+  } catch { /* ignore */ }
+
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
+    ai_provider: process.env.AI_PROVIDER || 'ollama',
+    ollama: ollamaStatus,
     security: {
       helmet: true,
       cors: true,

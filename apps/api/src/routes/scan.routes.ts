@@ -4,6 +4,8 @@ import path from 'path';
 import fs from 'fs';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { scanImage, scanBase64 } from '../services/vision.service';
+import { validate, ScanBase64Schema } from '../validators';
+import { scanLimiter } from '../middleware/rate-limiter';
 
 var router = Router();
 router.use(authMiddleware);
@@ -36,7 +38,7 @@ var upload = multer({
 });
 
 // POST /api/scan/image — upload + scan image file
-router.post('/image', upload.single('image'), async (req: AuthRequest, res: Response) => {
+router.post('/image', scanLimiter, upload.single('image'), async (req: AuthRequest, res: Response) => {
   try {
     if (!req.file) {
       res.status(400).json({ success: false, error: 'Nicio imagine trimisă' });
@@ -68,7 +70,7 @@ router.post('/image', upload.single('image'), async (req: AuthRequest, res: Resp
 });
 
 // POST /api/scan/base64 — scan from base64 image data
-router.post('/base64', async (req: AuthRequest, res: Response) => {
+router.post('/base64', scanLimiter, validate(ScanBase64Schema), async (req: AuthRequest, res: Response) => {
   try {
     var { image, mimeType } = req.body;
     if (!image) {
@@ -111,10 +113,15 @@ router.get('/history', async (req: AuthRequest, res: Response) => {
       take: 20
     });
 
-    var parsed = scans.map((s: any) => ({
-      ...s,
-      rawResult: JSON.parse(s.rawResult)
-    }));
+    var parsed = scans.map((s: any) => {
+      var result = null;
+      try {
+        result = JSON.parse(s.rawResult);
+      } catch {
+        result = { error: 'Date corupte' };
+      }
+      return { ...s, rawResult: result };
+    });
 
     res.json({ success: true, data: parsed });
   } catch (err: any) {

@@ -13,12 +13,17 @@ export function calculateBMR(weight_kg: number, height_cm: number, age: number, 
 }
 
 // ===== TDEE (Total Daily Energy Expenditure) =====
+// Valorile trebuie să fie identice cu enum-ul din validators/index.ts
 var ACTIVITY_FACTORS: Record<string, number> = {
   sedentary: 1.2,
+  lightly_active: 1.375,
+  moderately_active: 1.55,
+  very_active: 1.725,
+  extra_active: 1.9,
+  // Valori legacy (pentru compatibilitate cu date deja salvate în DB)
   light: 1.375,
   moderate: 1.55,
   active: 1.725,
-  very_active: 1.9
 };
 
 export function calculateTDEE(bmr: number, activityLevel: string): number {
@@ -59,8 +64,9 @@ export function calculateGL(gi: number, carbsPerServing: number): number {
 // ===== Water need =====
 export function calculateWaterNeed(weight_kg: number, activityLevel: string): number {
   var base = weight_kg * 33;
-  var multiplier = activityLevel === 'active' ? 1.3 :
-    activityLevel === 'very_active' ? 1.5 : 1.0;
+  var isActive = activityLevel === 'active' || activityLevel === 'very_active';
+  var isVeryActive = activityLevel === 'very_active' || activityLevel === 'extra_active';
+  var multiplier = isVeryActive ? 1.5 : isActive ? 1.3 : 1.0;
   return Math.round(base * multiplier);
 }
 

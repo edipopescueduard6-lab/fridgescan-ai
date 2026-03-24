@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'async_hooks';
-import { PrismaClient, Prisma } from '@prisma/client';
-import { Request, Response, NextFunction } from 'express';
+import { PrismaClient } from '@prisma/client';
+import { Response, NextFunction } from 'express';
 
 // ============================================================
 // AsyncLocalStorage for request-scoped userId
@@ -47,150 +47,145 @@ export function rlsContextMiddleware(req: any, _res: Response, next: NextFunctio
 // Models protected by RLS
 // ============================================================
 
-const PROTECTED_MODELS = ['PantryItem', 'SavedRecipe', 'ScanHistory'];
+// Helper type for query args that have a `where` clause
+interface WithWhere {
+  where?: Record<string, any>;
+}
+
+interface WithData {
+  data?: Record<string, any>;
+}
 
 /**
- * Set up Row Level Security middleware on Prisma.
- * Automatically injects userId filters on protected models
- * to prevent cross-user data access.
+ * Set up Row Level Security via Prisma Client Extensions ($extends).
+ * Returns a new extended PrismaClient that automatically injects userId
+ * filters on protected models (PantryItem, SavedRecipe, ScanHistory).
+ *
+ * Usage:
+ *   const basePrisma = new PrismaClient();
+ *   const prisma = setupRLS(basePrisma);
  */
-export function setupRLS(prisma: PrismaClient): void {
-  prisma.$use(async (params: Prisma.MiddlewareParams, next: (params: Prisma.MiddlewareParams) => Promise<any>) => {
-    // Only apply to protected models
-    if (!params.model || !PROTECTED_MODELS.includes(params.model)) {
-      return next(params);
-    }
+export function setupRLS(prisma: PrismaClient) {
+  return prisma.$extends({
+    query: {
+      pantryItem: buildModelRLS('pantryItem', prisma),
+      savedRecipe: buildModelRLS('savedRecipe', prisma),
+      scanHistory: buildModelRLS('scanHistory', prisma),
+    },
+  });
+}
 
-    const userId = getCurrentUserId();
+/**
+ * Build RLS query overrides for a single model.
+ */
+function buildModelRLS(modelName: string, basePrisma: PrismaClient) {
+  return {
+    // --- READ ---
+    async findMany({ args, query }: { args: any; query: any }) {
+      const userId = getCurrentUserId();
+      if (userId) {
+        args.where = { ...args.where, userId };
+      }
+      return query(args);
+    },
 
-    // If no userId in context, skip RLS (allows system-level operations)
-    if (!userId) {
-      return next(params);
-    }
+    async findFirst({ args, query }: { args: any; query: any }) {
+      const userId = getCurrentUserId();
+      if (userId) {
+        args.where = { ...args.where, userId };
+      }
+      return query(args);
+    },
 
-    // --- READ operations: inject userId filter ---
-    if (params.action === 'findMany' || params.action === 'findFirst') {
-      if (!params.args) {
-        params.args = {};
-      }
-      if (!params.args.where) {
-        params.args.where = {};
-      }
-      params.args.where.userId = userId;
-      return next(params);
-    }
+    async findUnique({ args, query }: { args: any; query: any }) {
+      // findUnique doesn't support arbitrary where, so pass through
+      // Ownership is enforced at the route level for unique lookups
+      return query(args);
+    },
 
-    // --- COUNT operations: inject userId filter ---
-    if (params.action === 'count') {
-      if (!params.args) {
-        params.args = {};
+    // --- COUNT / AGGREGATE ---
+    async count({ args, query }: { args: any; query: any }) {
+      const userId = getCurrentUserId();
+      if (userId) {
+        args.where = { ...args.where, userId };
       }
-      if (!params.args.where) {
-        params.args.where = {};
-      }
-      params.args.where.userId = userId;
-      return next(params);
-    }
+      return query(args);
+    },
 
-    // --- GROUP BY operations: inject userId filter ---
-    if (params.action === 'groupBy') {
-      if (!params.args) {
-        params.args = {};
+    async groupBy({ args, query }: { args: any; query: any }) {
+      const userId = getCurrentUserId();
+      if (userId) {
+        args.where = { ...args.where, userId };
       }
-      if (!params.args.where) {
-        params.args.where = {};
-      }
-      params.args.where.userId = userId;
-      return next(params);
-    }
+      return query(args);
+    },
 
-    // --- CREATE operations: inject userId ---
-    if (params.action === 'create') {
-      if (!params.args) {
-        params.args = {};
+    // --- CREATE ---
+    async create({ args, query }: { args: any; query: any }) {
+      const userId = getCurrentUserId();
+      if (userId && args.data && !args.data.userId) {
+        args.data.userId = userId;
       }
-      if (!params.args.data) {
-        params.args.data = {};
-      }
-      // Only set userId if not already provided
-      if (!params.args.data.userId) {
-        params.args.data.userId = userId;
-      }
-      return next(params);
-    }
+      return query(args);
+    },
 
-    // --- UPDATE operations: verify ownership before updating ---
-    if (params.action === 'update' || params.action === 'updateMany') {
-      if (!params.args) {
-        params.args = {};
+    async createMany({ args, query }: { args: any; query: any }) {
+      const userId = getCurrentUserId();
+      if (userId && Array.isArray(args.data)) {
+        args.data = args.data.map((item: any) => ({
+          ...item,
+          userId: item.userId || userId,
+        }));
       }
-      if (!params.args.where) {
-        params.args.where = {};
-      }
+      return query(args);
+    },
 
-      // For single update, verify ownership first
-      if (params.action === 'update' && params.args.where.id) {
-        const existing = await (prisma as any)[lowerFirst(params.model)].findFirst({
-          where: { id: params.args.where.id, userId },
+    // --- UPDATE ---
+    async update({ args, query }: { args: any; query: any }) {
+      const userId = getCurrentUserId();
+      if (userId && args.where?.id) {
+        // Verify ownership before allowing update
+        const existing = await (basePrisma as any)[modelName].findFirst({
+          where: { id: args.where.id, userId },
           select: { id: true },
         });
-
         if (!existing) {
           throw new Error('Acces interzis: nu ai permisiunea sa modifici aceasta resursa');
         }
       }
+      return query(args);
+    },
 
-      // For updateMany, add userId filter
-      if (params.action === 'updateMany') {
-        params.args.where.userId = userId;
+    async updateMany({ args, query }: { args: any; query: any }) {
+      const userId = getCurrentUserId();
+      if (userId) {
+        args.where = { ...args.where, userId };
       }
+      return query(args);
+    },
 
-      return next(params);
-    }
-
-    // --- DELETE operations: verify ownership before deleting ---
-    if (params.action === 'delete' || params.action === 'deleteMany') {
-      if (!params.args) {
-        params.args = {};
-      }
-      if (!params.args.where) {
-        params.args.where = {};
-      }
-
-      // For single delete, verify ownership first
-      if (params.action === 'delete' && params.args.where.id) {
-        const existing = await (prisma as any)[lowerFirst(params.model)].findFirst({
-          where: { id: params.args.where.id, userId },
+    // --- DELETE ---
+    async delete({ args, query }: { args: any; query: any }) {
+      const userId = getCurrentUserId();
+      if (userId && args.where?.id) {
+        // Verify ownership before allowing delete
+        const existing = await (basePrisma as any)[modelName].findFirst({
+          where: { id: args.where.id, userId },
           select: { id: true },
         });
-
         if (!existing) {
           throw new Error('Acces interzis: nu ai permisiunea sa stergi aceasta resursa');
         }
       }
+      return query(args);
+    },
 
-      // For deleteMany, add userId filter
-      if (params.action === 'deleteMany') {
-        params.args.where.userId = userId;
+    async deleteMany({ args, query }: { args: any; query: any }) {
+      const userId = getCurrentUserId();
+      if (userId) {
+        args.where = { ...args.where, userId };
       }
-
-      return next(params);
-    }
-
-    // All other actions pass through
-    return next(params);
-  });
-}
-
-// ============================================================
-// Helpers
-// ============================================================
-
-/**
- * Convert PascalCase model name to camelCase for Prisma client access.
- * e.g. "PantryItem" -> "pantryItem", "ScanHistory" -> "scanHistory"
- */
-function lowerFirst(str: string): string {
-  if (!str) return str;
-  return str.charAt(0).toLowerCase() + str.slice(1);
+      return query(args);
+    },
+  };
 }

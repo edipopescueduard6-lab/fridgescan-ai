@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { validate, UpdateProfileSchema } from '../validators';
 
 var router = Router();
 router.use(authMiddleware);
@@ -33,7 +34,7 @@ router.get('/profile', async (req: AuthRequest, res: Response) => {
 });
 
 // PUT /api/user/profile
-router.put('/profile', async (req: AuthRequest, res: Response) => {
+router.put('/profile', validate(UpdateProfileSchema), async (req: AuthRequest, res: Response) => {
   try {
     var { age, sex, weight, height, activityLevel, allergies, medicalConditions,
       dietaryPrefs, dailyCalorieGoal, pregnancyStatus, medications } = req.body;

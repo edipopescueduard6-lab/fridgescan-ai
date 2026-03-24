@@ -125,14 +125,14 @@ export const AddPantryItemSchema = z.object({
   unit: z.enum(PANTRY_UNITS, {
     error: 'Unitate de masura invalida (g, kg, ml, l, buc, lingura, cana)',
   }).optional(),
-  expiryDate: z.string()
-    .datetime({ offset: true })
-    .optional()
-    .or(z.string().date().optional()),
-  purchaseDate: z.string()
-    .datetime({ offset: true })
-    .optional()
-    .or(z.string().date().optional()),
+  expiryDate: z.union([
+    z.string().datetime({ offset: true }),
+    z.string().date(),
+  ]).optional(),
+  purchaseDate: z.union([
+    z.string().datetime({ offset: true }),
+    z.string().date(),
+  ]).optional(),
   location: z.enum(PANTRY_LOCATIONS, {
     error: 'Locatie invalida (fridge, freezer, pantry)',
   }).optional(),
@@ -140,7 +140,7 @@ export const AddPantryItemSchema = z.object({
     error: 'Valoare freshness invalida (fresh, ok, wilting, expired)',
   }).optional(),
   usdaFoodId: z.string().max(50).optional(),
-  nutritionPer100g: z.record(z.unknown()).optional(),
+  nutritionPer100g: z.record(z.string(), z.any()).optional(),
   scanId: z.string().max(50).optional(),
 });
 
@@ -216,7 +216,7 @@ export const GenerateRecipesSchema = z.object({
 });
 
 export const SaveRecipeSchema = z.object({
-  recipe: z.record(z.unknown(), {
+  recipe: z.record(z.string(), z.any(), {
     error: 'Datele retetei sunt obligatorii',
   }),
 });

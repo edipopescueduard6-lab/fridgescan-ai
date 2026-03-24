@@ -1,15 +1,12 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+/**
+ * Recipe generation service
+ * Provider: Ollama (local, gratuit) sau Gemini (cloud, API key)
+ */
+
+import { ollamaGenerate, parseJsonResponse } from './ollama.service';
 import { checkRecipeSafety, MEDICAL_DISCLAIMER } from './medical.service';
-import { calculateDailyCalories, mealCalorieDistribution } from './nutrition.service';
 
-var genAI: GoogleGenerativeAI | null = null;
-
-function getGenAI(): GoogleGenerativeAI {
-  if (!genAI) {
-    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-  }
-  return genAI;
-}
+const AI_PROVIDER = process.env.AI_PROVIDER || 'ollama';
 
 function buildRecipePrompt(ingredients: any[], profile: any): string {
   return `Ești un chef profesionist și nutriționist certificat.
@@ -19,13 +16,9 @@ INGREDIENTE DISPONIBILE:
 ${JSON.stringify(ingredients, null, 2)}
 
 PROFIL UTILIZATOR:
-- Vârstă: ${profile.age || 'necunoscută'} ani
-- Sex: ${profile.sex || 'necunoscut'}
-- Greutate: ${profile.weight || 'necunoscută'} kg
 - Alergii: ${(profile.allergies || []).join(', ') || 'niciuna'}
 - Condiții medicale: ${(profile.medicalConditions || []).join(', ') || 'niciuna'}
 - Preferințe dietare: ${(profile.dietaryPrefs || []).join(', ') || 'niciuna'}
-- Sarcină/Alăptare: ${profile.pregnancyStatus || 'nu'}
 - Medicamente: ${(profile.medications || []).join(', ') || 'niciuna'}
 
 REGULI STRICTE:
@@ -35,14 +28,14 @@ REGULI STRICTE:
 4. Calculează PRECIS valorile nutriționale per porție
 5. Pașii trebuie să fie clari, numerotați, cu temperaturi și timpi exacti
 
-FORMAT RĂSPUNS (JSON STRICT, fără markdown/backticks):
+FORMAT RĂSPUNS — DOAR JSON VALID, fără markdown, fără backticks:
 {
   "recipes": [
     {
       "id": "1",
-      "name": "Numele rețetei",
+      "name": "Numele reteței",
       "description": "Descriere scurtă",
-      "difficulty": "usor|mediu|avansat",
+      "difficulty": "usor",
       "prep_time_min": 15,
       "cook_time_min": 30,
       "total_time_min": 45,
@@ -110,41 +103,32 @@ FORMAT RĂSPUNS (JSON STRICT, fără markdown/backticks):
   ]
 }
 
-Răspunde DOAR cu JSON valid.`;
+Răspunde DOAR cu JSON valid. Niciun alt text.`;
 }
 
+/**
+ * Generate recipes using AI
+ */
 export async function generateRecipes(ingredients: any[], profile: any): Promise<any> {
-  var ai = getGenAI();
-  var model = ai.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const prompt = buildRecipePrompt(ingredients, profile);
 
-  var prompt = buildRecipePrompt(ingredients, profile);
-  var result = await model.generateContent(prompt);
-  var text = result.response.text();
+  let parsed: any;
 
-  // Clean response
-  var cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-
-  var parsed: any;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch {
-    // Retry fix
-    var fixResult = await model.generateContent(
-      `Repară acest JSON invalid și returnează DOAR JSON valid:\n${cleaned}`
-    );
-    var fixedText = fixResult.response.text().replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-    parsed = JSON.parse(fixedText);
+  if (AI_PROVIDER === 'ollama') {
+    parsed = await generateWithOllama(prompt);
+  } else {
+    parsed = await generateWithGemini(prompt);
   }
 
   // Post-process: run medical safety check on each recipe
   if (parsed.recipes) {
-    for (var recipe of parsed.recipes) {
-      var ingredientNames = (recipe.ingredients || []).map((i: any) => ({
+    for (const recipe of parsed.recipes) {
+      const ingredientNames = (recipe.ingredients || []).map((i: any) => ({
         name: i.name,
         nutrition: recipe.nutrition_per_serving
       }));
 
-      var safetyCheck = checkRecipeSafety(
+      const safetyCheck = checkRecipeSafety(
         ingredientNames,
         profile.allergies || [],
         profile.medicalConditions || [],
@@ -161,7 +145,7 @@ export async function generateRecipes(ingredients: any[], profile: any): Promise
       recipe._disclaimer = MEDICAL_DISCLAIMER;
     }
 
-    // Filter: put unsafe recipes last with warning
+    // Sort: safe recipes first
     parsed.recipes.sort((a: any, b: any) => {
       if (a._safe && !b._safe) return -1;
       if (!a._safe && b._safe) return 1;
@@ -170,4 +154,43 @@ export async function generateRecipes(ingredients: any[], profile: any): Promise
   }
 
   return parsed;
+}
+
+/**
+ * Generate with Ollama (local)
+ */
+async function generateWithOllama(prompt: string): Promise<any> {
+  console.log('[Recipes] Generating with Ollama (local)...');
+
+  const response = await ollamaGenerate(prompt);
+
+  try {
+    return parseJsonResponse(response);
+  } catch {
+    // Retry with stricter instruction
+    console.warn('[Recipes] First attempt JSON parse failed, retrying...');
+    const retryResponse = await ollamaGenerate(
+      'Repară acest JSON invalid și returnează DOAR JSON valid, fără alt text:\n' + response
+    );
+    return parseJsonResponse(retryResponse);
+  }
+}
+
+/**
+ * Generate with Gemini (cloud)
+ */
+async function generateWithGemini(prompt: string): Promise<any> {
+  const { GoogleGenerativeAI } = await import('@google/generative-ai');
+
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY lipsă! Setează AI_PROVIDER=ollama pentru generare locală gratuită.');
+  }
+
+  console.log('[Recipes] Generating with Gemini (cloud)...');
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+  const result = await model.generateContent(prompt);
+  const text = result.response.text();
+  return parseJsonResponse(text);
 }

@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import crypto from 'crypto';
+import { exportLimiter } from '../middleware/rate-limiter';
 
 const router = Router();
 router.use(authMiddleware);
@@ -99,7 +100,7 @@ router.post('/consent', async (req: AuthRequest, res: Response) => {
 // ===== DATA EXPORT (Art. 20 — Portabilitate) =====
 
 // GET /api/gdpr/export — exportă toate datele utilizatorului
-router.get('/export', async (req: AuthRequest, res: Response) => {
+router.get('/export', exportLimiter, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId!;
 

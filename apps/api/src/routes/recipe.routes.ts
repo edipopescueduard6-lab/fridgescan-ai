@@ -4,12 +4,14 @@ import { generateRecipes } from '../services/recipe.service';
 import { calculateDailyCalories, calculateBMR, calculateTDEE, calculateMacros,
   calculateBMI, calculateWaterNeed, mealCalorieDistribution } from '../services/nutrition.service';
 import { MEDICAL_DISCLAIMER } from '../services/medical.service';
+import { validate, GenerateRecipesSchema, SaveRecipeSchema } from '../validators';
+import { recipeLimiter } from '../middleware/rate-limiter';
 
 var router = Router();
 router.use(authMiddleware);
 
 // POST /api/recipes/generate — generează rețete din ingrediente
-router.post('/generate', async (req: AuthRequest, res: Response) => {
+router.post('/generate', recipeLimiter, validate(GenerateRecipesSchema), async (req: AuthRequest, res: Response) => {
   try {
     var profile = await req.prisma.userProfile.findUnique({
       where: { userId: req.userId }
@@ -60,7 +62,7 @@ router.post('/generate', async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/recipes/save — salvează rețetă
-router.post('/save', async (req: AuthRequest, res: Response) => {
+router.post('/save', validate(SaveRecipeSchema), async (req: AuthRequest, res: Response) => {
   try {
     var saved = await req.prisma.savedRecipe.create({
       data: {
@@ -82,10 +84,15 @@ router.get('/saved', async (req: AuthRequest, res: Response) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    var parsed = recipes.map((r: any) => ({
-      ...r,
-      recipeData: JSON.parse(r.recipeData)
-    }));
+    var parsed = recipes.map((r: any) => {
+      var data = null;
+      try {
+        data = JSON.parse(r.recipeData);
+      } catch {
+        data = { error: 'Date corupte' };
+      }
+      return { ...r, recipeData: data };
+    });
 
     res.json({ success: true, data: parsed });
   } catch (err: any) {

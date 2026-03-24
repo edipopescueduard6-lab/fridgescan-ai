@@ -292,9 +292,32 @@ export function checkRecipeSafety(
     allWarnings.push(...ingWarnings);
   }
 
-  var hasBlock = allWarnings.some(w => w.action === 'block');
+  // Deduplicare: warning-urile bazate pe nutriție (diabet, hipertensiune, CKD)
+  // se generează per ingredient dar se referă la valori la nivel de rețetă,
+  // deci pot apărea duplicate. Păstrăm un singur warning per (condition, ingredient).
+  var seen = new Set<string>();
+  var deduped: MedicalWarning[] = [];
+  for (var w of allWarnings) {
+    // Cheia de deduplicare: alergie și medicament sunt per ingredient (ok să fie duplicate)
+    // Nutriție (diabet/hipertensiune/CKD) — deduplicăm pe condition+message
+    var isNutritionWarning = (
+      w.condition === 'diabet' ||
+      w.condition === 'hipertensiune' ||
+      w.condition === 'boala_renala'
+    );
+    var key = isNutritionWarning
+      ? `${w.condition}:${w.message}`
+      : `${w.condition}:${w.ingredient}:${w.message}`;
 
-  return { safe: !hasBlock, warnings: allWarnings };
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(w);
+    }
+  }
+
+  var hasBlock = deduped.some(w => w.action === 'block');
+
+  return { safe: !hasBlock, warnings: deduped };
 }
 
 /**

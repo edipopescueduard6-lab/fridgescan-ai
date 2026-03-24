@@ -5,11 +5,13 @@ import {
   blacklistToken, checkLoginAttempt, recordLoginFailure,
   recordLoginSuccess, validatePassword
 } from '../middleware/auth';
+import { validate, RegisterSchema, LoginSchema } from '../validators';
+import { loginLimiter, registerLimiter } from '../middleware/rate-limiter';
 
 const router = Router();
 
 // POST /api/auth/register
-router.post('/register', async (req: AuthRequest, res: Response) => {
+router.post('/register', registerLimiter, validate(RegisterSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { email, password, name } = req.body;
 
@@ -87,7 +89,7 @@ router.post('/register', async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/auth/login
-router.post('/login', async (req: AuthRequest, res: Response) => {
+router.post('/login', loginLimiter, validate(LoginSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { email, password } = req.body;
 
